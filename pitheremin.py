@@ -93,7 +93,7 @@ while True: # Loop used to run infinitely.
             # Generate a waveform using numpy, then send it to defined pygame channel above, this is so that the sound is constant throughout hand movement,
             genSineWave(leftHandFreqSmoothed, rightHandAmp.flatten()) # We flatten the rightHandAmp parameter as the original variable takes two dimensions and must be converted to one.
             
-            print(f"Left Hand Frequency: {leftHandFreq} Right Hand Frequency: {rightHandAmp}") #
+            print(f"Left Hand Frequency: {leftHandFreqSmoothed}} Right Hand Frequency: {rightHandAmp}") #
         else:
             MAIN_CHANNEL.stop() # If no hands are detected, then pygames mixer will not play any sound, as there are no co-ordinates present to generate a sine wave.
         frame = cv2.flip(frame, 1) # Makes the frame horizintal, used to properly detect left and right hands.
