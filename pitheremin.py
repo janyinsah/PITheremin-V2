@@ -48,12 +48,13 @@ def capGain(samples): # Function to appy to samples tor reduce clipping sound.
 frame = cv2.VideoCapture(0) # Open up a frame, for webcam streaming.
 
 while True: # Loop used to run infinitely. 
-    camera = cv2.VideoCapture(0) #Created a videocapture object, that captures video from the default camera of the device.
+    
+    camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
     while camera.isOpened(): # While the camera is on:
         ret, frame = camera.read() # Captures a single frame
 
     # Like the old Thermein version, we draw hand landmarks onto the image by converting BGR to RGB and defining the number of hands for mediapipe to detect.
-        frame.flags.writeable = False # 
+        # frame.flags.writeable = False
         frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB) # Colour is converted to RGB to be read by mediapipe as it uses RGB system for colours.
         hand_result = mp_hands.Hands(max_num_hands=2).process(frame) # Define the result of the hand detection and process the image onto the webcam stream. Only maximum of two hands can be detected
         # This is so that the Pi Theremin cannot be interfered by other hands.
@@ -70,7 +71,7 @@ while True: # Loop used to run infinitely.
                 rightHand = hand_result.multi_hand_landmarks[1] # Identify the other hand as the right hand at index 1, as that is the second value in the list.
             
             else: # "Kinda" fixes the index out of range problem for only detecting one hand. We check how many hands are on the camera and continue the webcam stream regardless if it indexes out of range.
-                continue
+                continue # It simply freezes the water.
 
             # This section of code gets the x and y axis for each landmark within the frame.
             leftHandCoord = np.array([[landmark.x, landmark.y] for landmark in leftHand.landmark])
@@ -87,16 +88,20 @@ while True: # Loop used to run infinitely.
             rightHandAmp = np.interp(rightHandCoord, [minCoord[1], maxCoord[1]], [0, 1])[:, np.newaxis] # np.newaxis adds an empty dimension so that numpy can interpolate rightHandAmps values to map it to the required range for amplitude of the wave.
 
 
-            leftHandFreqSmoothed = np.convolve(leftHandFreq.flatten(), window, mode='same') # We flatten the left hand frequency to a 1D array so that it can be sequenced and convolved
+            leftHandFreqSmoothed = np.convolve(leftHandFreq.flatten(), window, mode='same') 
+            rightHandAmpSmoothed = np.convolve(rightHandAmp.flatten(), window, mode='same')
+            # We flatten the left hand frequency to a 1D array so that it can be sequenced and convolved
             # Hann window used for signal processing and the same means that the input (leftHandFreq) signal will still match the output signal. This is passed as a parameter to genSineWave instead of the original left hand frequency.
+            # The same is done to righthandFreq for testing.
+
 
             # Generate a waveform using numpy, then send it to defined pygame channel above, this is so that the sound is constant throughout hand movement,
-            genSineWave(leftHandFreqSmoothed, rightHandAmp.flatten()) # We flatten the rightHandAmp parameter as the original variable takes two dimensions and must be converted to one.
+            genSineWave(leftHandFreqSmoothed, rightHandAmpSmoothed) # We flatten the rightHandAmp parameter as the original variable takes two dimensions and must be converted to one.
             
-            print(f"Left Hand Frequency: {leftHandFreqSmoothed}} Right Hand Frequency: {rightHandAmp}") #
         else:
             MAIN_CHANNEL.stop() # If no hands are detected, then pygames mixer will not play any sound, as there are no co-ordinates present to generate a sine wave.
-        frame = cv2.flip(frame, 1) # Makes the frame horizintal, used to properly detect left and right hands.
+
+        # frame = cv2.flip(frame, 1)# Makes the frame horizintal, used to properly detect left and right hands.
         cv2.imshow("Pi Theremin", frame) # Display the frame, with given title "Pi Theremin."
         cv2.moveWindow("Pi Theremin", 0, 0) # Maps the frame to the top left of the window. 
         if cv2.waitKey(1) == ord('q'): # Quit program and end while loop when q is pressed.
