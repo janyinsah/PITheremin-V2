@@ -90,7 +90,7 @@ while True: # Loop used to run infinitely.
         leftHand, rightHand = None, None # No detected hands on frame, initial hand values are set to None. 
         if hand_result.multi_hand_landmarks: # If hand landmarks are detected on the image:
             hand_landmark = hand_result.multi_hand_landmarks
-            
+
             hand_centers = [np.mean(np.array([[landmark.x, landmark.y] for landmark in hand.landmark]), axis=0) for hand in hand_landmark]
             sorted_hand_landmarks = [hand for _, hand in sorted(zip(hand_centers, hand_landmark), key=lambda pair: pair[0][0])]
 
@@ -101,24 +101,32 @@ while True: # Loop used to run infinitely.
                 mp_drawing.draw_landmarks(frame, landmark_item, connections=mp_hands.HAND_CONNECTIONS) # Draw the landmarks onto the image/frame. (Optional, only used to see how mediapipe works in response to the Theremin Program.)
 
             # This section of code gets the x and y axis for each landmark within the frame.
-            if leftHand is not None: 
-                leftHandCoord = np.array([[landmark.x, landmark.y] for landmark in leftHand.landmark])
+            leftHandCoord = np.array([[landmark.x, landmark.y] for landmark in leftHand.landmark])
+
             if rightHand is not None: 
                 rightHandCoord = np.array([[landmark.x, landmark.y] for landmark in rightHand.landmark])
+            else: 
+                rightHandCoord = None
 
-            # minCoord and maxCoord is the result of calcualting the minimum and amximum co-ordinates of the left hand and right hand.
-            # np.vstack is used to stack the co-ordinates into a 2d array in sequence vertically so it can be interpolated (next block of code).
-            minCoord = np.min(np.vstack([leftHandCoord, rightHandCoord]), axis=0)
-            maxCoord = np.max(np.vstack([leftHandCoord, rightHandCoord]), axis=0)
+            if rightHandCoord is not None:
+                # minCoord and maxCoord is the result of calcualting the minimum and amximum co-ordinates of the left hand and right hand.
+                # np.vstack is used to stack the co-ordinates into a 2d array in sequence vertically so it can be interpolated (next block of code).
+                minCoord = np.min(np.vstack([leftHandCoord, rightHandCoord]), axis=0)
+                maxCoord = np.max(np.vstack([leftHandCoord, rightHandCoord]), axis=0)
+            else: 
+                minCoord = np.min(leftHandCoord, axis=0)
+                maxCoord = np.max(leftHandCoord, axis=0)
 
             # Map distance of hands within frame, to freq and amp ranges for the Pi Theremin. 
             # Numpy interpolation so that even if the hand coordinations fall out of range (although not expected to due to vstack and the assignment of the coordinate arrays), that it is extrapolated back into the ranges each endpoint. e.g 100,1000.
 
             leftHandFreq = np.interp(leftHandCoord, [minCoord[0], maxCoord[0]], [100, 1000]) # Mapping the left hand co-ordinates within the range of set amp min, and amp max 0 and 1.
-            rightHandAmp = np.interp(rightHandCoord, [minCoord[1], maxCoord[1]], [0, 1])[:, np.newaxis] # np.newaxis adds an empty dimension so that numpy can interpolate rightHandAmps values to map it to the required range for amplitude of the wave
-
             leftHandFreqSmoothed = np.convolve(leftHandFreq.flatten(), window, mode='same') 
-            rightHandAmpSmoothed = np.convolve(rightHandAmp.flatten(), window, mode='same')
+
+            if rightHandCoord is not None:
+                rightHandAmp = np.interp(rightHandCoord, [minCoord[1], maxCoord[1]], [0, 1])[:, np.newaxis] # np.newaxis adds an empty dimension so that numpy can interpolate rightHandAmps values to map it to the required range for amplitude of the wave
+            else:
+                rightHandAmp = np.zeros_like(leftHandFreqSmoothed)
 
             # We flatten the left hand frequency to a 1D array so that it can be sequenced and convolved
             # Hann window used for signal processing and the same means that the input (leftHandFreq) signal will still match the output signal. This is passed as a parameter to genSineWave instead of the original left hand frequency.
