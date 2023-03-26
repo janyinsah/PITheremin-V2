@@ -61,7 +61,7 @@ def play_sound(sound_queue):
         genSineWave(Freq, Amp)
         time.sleep(0.01)
 
-camera = cv2.VideoCapture(0) #Created a videocapture object, that captures video from the default camera of the device.
+camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
 camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 sound_queue = queue.Queue()
