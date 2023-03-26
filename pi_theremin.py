@@ -1,19 +1,26 @@
-# END OF YEAR PROJECT: THE PI THEREMIN
+# END OF YEAR PROJECT: THE PI THEREMIN - RASPBERRY PI OFFICIAL VERSION
 # CREATED BY JOSIAH ANYINSAH-BONDZIE
 # STUDENT ID: 8624637
+# ---------------------------------------------------------------------------------
+#                                          NOTES
+# THIS IS THE SAME CODE AS THE DESKTOP VERSION (ORIGINAL DEVELOPMENT VERSION FOR THE PI THEREMIN)
+#                                           DIFFERENCES
+# - SAMPLESIZE IS HALF THE RATE OF THE DESKTOP VERSION - EASIER ON THE CPU WHEN NUMPY DOES MATHEMATICAL CALCULATIONS ACCORDING TO HAND MOVEMENT
+# - RESOLUTION OF THE FRAME HAS BEEN REDUCED - THIS IS TO REDUCE THE I/O LOAD TIMES WHEN DISPLAYING EACH FRAME
+# - FRAME RATE IS CAPPED TO 15FPS - AGAIN UUSED TO REDUCE I/O TIMES WITH A WITH A CAPPED FRAME RATE TO EASE CPU AND I/O USAGE.
 # ---------------------------------------------------------------------------------
 # IMPORT NECESSARY MODULES 
 import mediapipe as mp # Module used to display and receive hand landmark data.
 import cv2 # Used for capture video data for the Theremin.
 import numpy as np # Maths module used to calculate waveform
 import pygame # Game module, but used to continously produce sine wave on it's mixer channels.
-import threading
-import queue
-import time
+import threading # Used for multi-threading, used to seperate the sound playback from the mixer by putting it on a different thread.
+import queue # Used as a data structure to make functions and processes thread safe. In this case specifically for the sound playback.
+import time # Used to implement pauses between lines and blocks of code.
 # ---------------------------------------------------------------------------------
 #                                       BODY OF CODE
 # Create the pygame mixer.
-pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512) # Initialize the mixer with corresponding values passed as arguements.
+pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512) # Initialize the mixer with corresponding values passed as arguements.
 
 print(pygame.mixer.get_init())
 
@@ -36,9 +43,9 @@ lock_mixer = threading.Lock()
 # Define and generate a sine wave through a function, using numpy.
 def genSineWave(Freq, Amp):
     Freq = np.reshape(Freq, (-1, 1))
-    SAMPLES = np.zeros((44100, 2), dtype=np.int16) # Initialize samples using a numpy array passing two channels as a tuple.
-    SINE = np.sin(2 * np.pi * np.arange(44100) * Freq[0] / 44100)
-    resizeAmp = np.resize(Amp, (44100,)) # Reshapes the Amp to fit within the sample set for the mixer to inteprate the array and play the generetated sound wave at the correct
+    SAMPLES = np.zeros((22050, 2), dtype=np.int16) # Initialize samples using a numpy array passing two channels as a tuple.
+    SINE = np.sin(2 * np.pi * np.arange(22050) * Freq[0] / 22050)
+    resizeAmp = np.resize(Amp, (22050,)) # Reshapes the Amp to fit within the sample set for the mixer to inteprate the array and play the generetated sound wave at the correct
     SCALED_WAVE = (SINE * 32767 * resizeAmp).astype(np.int16)
     with lock_mixer:
         SAMPLES[:, 0] = SCALED_WAVE  # Index the samples array by 2 so that it matches the format of the steromixer.
@@ -61,8 +68,15 @@ def play_sound(sound_queue):
         genSineWave(Freq, Amp)
         time.sleep(0.01)
 
-camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
+# Video Frame Properties 
+camera = cv2.VideoCapture(0) #Created a videocapture object, that captures video from the default camera of the device.
+# Camera properties defined to reduce the resolution of the frame.
+camera.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
 camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+frame_rate = 15  # The frame cap total of which the frames should not exceed per second.
+delay = 1/frame_rate # Applies frame rate of how many frames appear per capture.
 
 sound_queue = queue.Queue()
 sound_thread = threading.Thread(target=play_sound, args=(sound_queue,))
@@ -71,6 +85,8 @@ sound_thread.start()
 leftHandFreqSmoothed = np.zeros(1)
 rightHandAmp = np.zeros(1)
 
+# Additional Code for the Rasberry Pi. As the rasbperry Pi does not have the same resources as a desktop, some of the processes must be reduced.
+
 
 hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8, min_tracking_confidence=0.5) # Only maximum of two hands can be detected. This was previously inside the while loop which caused the memory leak.
 
@@ -78,11 +94,15 @@ while True: # Loop used to run infinitely.
     while camera.isOpened(): # While the camera is on:
         ret, frame = camera.read() # Captures a single frame
 
+        if not ret:
+            break
+        time.sleep(delay)
     # Like the old Thermein version, we draw hand landmarks onto the image by converting BGR to RGB and defining the number of hands for mediapipe to detect.
         frame.flags.writeable = False
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Colour is converted to RGB to be read by mediapipe as it uses RGB system for colours.
         hand_result = hands.process(frame) # Define the result of the hand detection and process the image onto the webcam stream. Only maximum of two hands can be detected
         # This is so that the Pi Theremin cannot be interfered by other hands.
+
 #----------------------------------------------------------------
 # Draw hands onto image (webcam), by converting RGB abck to BGR, as this is OpenCV's colour language and then draw the landmarks by detecting each of them using a for loop.
         frame.flags.writeable = True
