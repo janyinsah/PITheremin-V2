@@ -61,9 +61,7 @@ def play_sound(sound_queue):
         genSineWave(Freq, Amp)
         time.sleep(0.01)
 
-camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
-camera.set(3, 320)  # Set width
-camera.set(4, 240)  # Set height
+camera = cv2.VideoCapture(0) #Created a videocapture object, that captures video from the default camera of the device.
 camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 sound_queue = queue.Queue()
@@ -73,10 +71,8 @@ sound_thread.start()
 leftHandFreqSmoothed = np.zeros(1)
 rightHandAmp = np.zeros(1)
 
-FREQ_RANGE = [100, 1000]
-AMP_RANGE = [0, 1]
 
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8, min_tracking_confidence=0.5)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8, min_tracking_confidence=0.5) # Only maximum of two hands can be detected. This was previously inside the while loop which caused the memory leak.
 
 while True: # Loop used to run infinitely. 
     while camera.isOpened(): # While the camera is on:
@@ -93,18 +89,22 @@ while True: # Loop used to run infinitely.
         frame = cv2.cvtColor(frame,cv2.COLOR_RGB2BGR) # Converts back to BGR to displayed on the opencv video frame. BGR is openCV's colour system.
         leftHand, rightHand = None, None # No detected hands on frame, initial hand values are set to None. 
         if hand_result.multi_hand_landmarks: # If hand landmarks are detected on the image:
+            hand_landmark = hand_result.multi_hand_landmarks
+            
+            hand_centers = [np.mean(np.array([[landmark.x, landmark.y] for landmark in hand.landmark]), axis=0) for hand in hand_landmark]
+            sorted_hand_landmarks = [hand for _, hand in sorted(zip(hand_centers, hand_landmark), key=lambda pair: pair[0][0])]
+
+            leftHand = sorted_hand_landmarks[0]
+            rightHand = sorted_hand_landmarks[1] if len(sorted_hand_landmarks) == 2 else None
+
             for landmark_item in hand_result.multi_hand_landmarks: # Loop through each landmark in then landmark list: multi_hand_landmarks.
                 mp_drawing.draw_landmarks(frame, landmark_item, connections=mp_hands.HAND_CONNECTIONS) # Draw the landmarks onto the image/frame. (Optional, only used to see how mediapipe works in response to the Theremin Program.)
-            leftHand = hand_result.multi_hand_landmarks[0] # Maximum number of hands used is 2,(mp.hands see above) so within the list the left hand is index 0.
-            if len(hand_result.multi_hand_landmarks) == 2: # If two hands are detected within the frame,
-                rightHand = hand_result.multi_hand_landmarks[1] # Identify the other hand as the right hand at index 1, as that is the second value in the list.
-            
-            else: # "Kinda" fixes the index out of range problem for only detecting one hand. We check how many hands are on the camera and continue the webcam stream regardless if it indexes out of range.
-                continue # It simply freezes the water.
 
             # This section of code gets the x and y axis for each landmark within the frame.
-            leftHandCoord = np.array([[landmark.x, landmark.y] for landmark in leftHand.landmark])
-            rightHandCoord = np.array([[landmark.x, landmark.y] for landmark in rightHand.landmark])
+            if leftHand is not None: 
+                leftHandCoord = np.array([[landmark.x, landmark.y] for landmark in leftHand.landmark])
+            if rightHand is not None: 
+                rightHandCoord = np.array([[landmark.x, landmark.y] for landmark in rightHand.landmark])
 
             # minCoord and maxCoord is the result of calcualting the minimum and amximum co-ordinates of the left hand and right hand.
             # np.vstack is used to stack the co-ordinates into a 2d array in sequence vertically so it can be interpolated (next block of code).
@@ -130,7 +130,6 @@ while True: # Loop used to run infinitely.
         else:
             sound_queue.put((np.zeros_like(leftHandFreqSmoothed), np.zeros_like(rightHandAmp)))
 
-        # frame = cv2.flip(frame, 1)# Makes the frame horizintal, used to properly detect left and right hands.
         cv2.imshow("Pi Theremin", frame) # Display the frame, with given title "Pi Theremin."
         cv2.moveWindow("Pi Theremin", 0, 0) # Maps the frame to the top left of the window. 
         if cv2.waitKey(1) == ord('q'): # Quit program and end while loop when q is pressed.
