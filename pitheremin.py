@@ -31,17 +31,20 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 
+lock_mixer = threading.Lock()
+
 # Define and generate a sine wave through a function, using numpy.
 def genSineWave(Freq, Amp):
     Freq = np.reshape(Freq, (-1, 1))
     SAMPLES = np.zeros((44100, 2), dtype=np.int16) # Initialize samples using a numpy array passing two channels as a tuple.
     SINE = np.sin(2 * np.pi * np.arange(44100) * Freq[0] / 44100)
-    resizeAmp = np.resize(Amp, (44100,))
+    resizeAmp = np.resize(Amp, (44100,)) # Reshapes the Amp to fit within the sample set for the mixer to inteprate the array and play the generetated sound wave at the correct
     SCALED_WAVE = (SINE * 32767 * resizeAmp).astype(np.int16)
-    SAMPLES[:, 0] = SCALED_WAVE  # Index the samples array by 2 so that it matches the format of the steromixer.
-    SAMPLES[:, 1] = SCALED_WAVE  # It duplicates the number of samples aqcross the stereo channel 
-    SOUND = pygame.sndarray.make_sound(capGain(SAMPLES)) # Convert then generate the sine wave based of it's calculation of the position of the left/right hand co-ordinates.
-    MAIN_CHANNEL.play(SOUND, loops = -1) # Plays the through the pygame channel.
+    with lock_mixer:
+        SAMPLES[:, 0] = SCALED_WAVE  # Index the samples array by 2 so that it matches the format of the steromixer.
+        SAMPLES[:, 1] = SCALED_WAVE  # It duplicates the number of samples aqcross the stereo channel 
+        SOUND = pygame.sndarray.make_sound(capGain(SAMPLES)) # Convert then generate the sine wave based of it's calculation of the position of the left/right hand co-ordinates.
+        MAIN_CHANNEL.play(SOUND, loops = -1) # Plays the through the pygame channel.
 
 def capGain(samples): # Function to appy to samples tor reduce clipping sound.
     maxAmp = np.iinfo(samples.dtype).max
@@ -59,6 +62,9 @@ def play_sound(sound_queue):
         time.sleep(0.01)
 
 camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
+camera.set(3, 320)  # Set width
+camera.set(4, 240)  # Set height
+camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 sound_queue = queue.Queue()
 sound_thread = threading.Thread(target=play_sound, args=(sound_queue,))
@@ -70,14 +76,16 @@ rightHandAmp = np.zeros(1)
 FREQ_RANGE = [100, 1000]
 AMP_RANGE = [0, 1]
 
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8, min_tracking_confidence=0.5)
+
 while True: # Loop used to run infinitely. 
     while camera.isOpened(): # While the camera is on:
         ret, frame = camera.read() # Captures a single frame
 
     # Like the old Thermein version, we draw hand landmarks onto the image by converting BGR to RGB and defining the number of hands for mediapipe to detect.
-        # frame.flags.writeable = False
+        frame.flags.writeable = False
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Colour is converted to RGB to be read by mediapipe as it uses RGB system for colours.
-        hand_result = mp_hands.Hands(max_num_hands=2).process(frame) # Define the result of the hand detection and process the image onto the webcam stream. Only maximum of two hands can be detected
+        hand_result = hands.process(frame) # Define the result of the hand detection and process the image onto the webcam stream. Only maximum of two hands can be detected
         # This is so that the Pi Theremin cannot be interfered by other hands.
 #----------------------------------------------------------------
 # Draw hands onto image (webcam), by converting RGB abck to BGR, as this is OpenCV's colour language and then draw the landmarks by detecting each of them using a for loop.
