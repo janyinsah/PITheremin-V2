@@ -7,6 +7,9 @@ import mediapipe as mp # Module used to display and receive hand landmark data.
 import cv2 # Used for capture video data for the Theremin.
 import numpy as np # Maths module used to calculate waveform
 import pygame # Game module, but used to continously produce sine wave on it's mixer channels.
+import threading
+import queue
+import time
 # ---------------------------------------------------------------------------------
 #                                       BODY OF CODE
 # Create the pygame mixer.
@@ -32,10 +35,11 @@ mp_drawing_styles = mp.solutions.drawing_styles
 def genSineWave(Freq, Amp):
     Freq = np.reshape(Freq, (-1, 1))
     SAMPLES = np.zeros((44100, 2), dtype=np.int16) # Initialize samples using a numpy array passing two channels as a tuple.
-    SINE = np.sin(2 * np.pi * np.arange(44100) * Freq[0]/44100)
-    SCALED_WAVE = (SINE * 32767 * Amp[1]/2).astype(np.int16)
+    SINE = np.sin(2 * np.pi * np.arange(44100) * Freq[0] / 44100)
+    resizeAmp = np.resize(Amp, (44100,))
+    SCALED_WAVE = (SINE * 32767 * resizeAmp).astype(np.int16)
     SAMPLES[:, 0] = SCALED_WAVE  # Index the samples array by 2 so that it matches the format of the steromixer.
-    SAMPLES[:, 1] = SCALED_WAVE  # It duplicates the number of samples across the stereo channel 
+    SAMPLES[:, 1] = SCALED_WAVE  # It duplicates the number of samples aqcross the stereo channel 
     SOUND = pygame.sndarray.make_sound(capGain(SAMPLES)) # Convert then generate the sine wave based of it's calculation of the position of the left/right hand co-ordinates.
     MAIN_CHANNEL.play(SOUND, loops = -1) # Plays the through the pygame channel.
 
@@ -44,18 +48,35 @@ def capGain(samples): # Function to appy to samples tor reduce clipping sound.
     gain = min(1, (maxAmp / 2) / np.max(np.abs(samples))) 
     return (samples * gain).astype(samples.dtype)
 
+def play_sound(sound_queue):
+    while True:
+        sound_data = sound_queue.get()
+        if sound_data is None:
+            break
+        Freq, Amp = sound_data
+        Amp = Amp.flatten()[:Freq.shape[0]]
+        genSineWave(Freq, Amp)
+        time.sleep(0.01)
 
-frame = cv2.VideoCapture(0) # Open up a frame, for webcam streaming.
+camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
+
+sound_queue = queue.Queue()
+sound_thread = threading.Thread(target=play_sound, args=(sound_queue,))
+sound_thread.start()
+
+leftHandFreqSmoothed = np.zeros(1)
+rightHandAmp = np.zeros(1)
+
+FREQ_RANGE = [100, 1000]
+AMP_RANGE = [0, 1]
 
 while True: # Loop used to run infinitely. 
-    
-    camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
     while camera.isOpened(): # While the camera is on:
         ret, frame = camera.read() # Captures a single frame
 
     # Like the old Thermein version, we draw hand landmarks onto the image by converting BGR to RGB and defining the number of hands for mediapipe to detect.
         # frame.flags.writeable = False
-        frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB) # Colour is converted to RGB to be read by mediapipe as it uses RGB system for colours.
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Colour is converted to RGB to be read by mediapipe as it uses RGB system for colours.
         hand_result = mp_hands.Hands(max_num_hands=2).process(frame) # Define the result of the hand detection and process the image onto the webcam stream. Only maximum of two hands can be detected
         # This is so that the Pi Theremin cannot be interfered by other hands.
 #----------------------------------------------------------------
@@ -84,22 +105,22 @@ while True: # Loop used to run infinitely.
 
             # Map distance of hands within frame, to freq and amp ranges for the Pi Theremin. 
             # Numpy interpolation so that even if the hand coordinations fall out of range (although not expected to due to vstack and the assignment of the coordinate arrays), that it is extrapolated back into the ranges each endpoint. e.g 100,1000.
-            leftHandFreq = np.interp(leftHandCoord, [minCoord[0], maxCoord[0]], [100, 1000]) # Mapping the left hand co-ordinates within the range of set amp min, and amp max 0 and 1.
-            rightHandAmp = np.interp(rightHandCoord, [minCoord[1], maxCoord[1]], [0, 1])[:, np.newaxis] # np.newaxis adds an empty dimension so that numpy can interpolate rightHandAmps values to map it to the required range for amplitude of the wave.
 
+            leftHandFreq = np.interp(leftHandCoord, [minCoord[0], maxCoord[0]], [100, 1000]) # Mapping the left hand co-ordinates within the range of set amp min, and amp max 0 and 1.
+            rightHandAmp = np.interp(rightHandCoord, [minCoord[1], maxCoord[1]], [0, 1])[:, np.newaxis] # np.newaxis adds an empty dimension so that numpy can interpolate rightHandAmps values to map it to the required range for amplitude of the wave
 
             leftHandFreqSmoothed = np.convolve(leftHandFreq.flatten(), window, mode='same') 
             rightHandAmpSmoothed = np.convolve(rightHandAmp.flatten(), window, mode='same')
+
             # We flatten the left hand frequency to a 1D array so that it can be sequenced and convolved
             # Hann window used for signal processing and the same means that the input (leftHandFreq) signal will still match the output signal. This is passed as a parameter to genSineWave instead of the original left hand frequency.
             # The same is done to righthandFreq for testing.
 
 
             # Generate a waveform using numpy, then send it to defined pygame channel above, this is so that the sound is constant throughout hand movement,
-            genSineWave(leftHandFreqSmoothed, rightHandAmpSmoothed) # We flatten the rightHandAmp parameter as the original variable takes two dimensions and must be converted to one.
-            
+            sound_queue.put((leftHandFreqSmoothed, rightHandAmp))            
         else:
-            MAIN_CHANNEL.stop() # If no hands are detected, then pygames mixer will not play any sound, as there are no co-ordinates present to generate a sine wave.
+            sound_queue.put((np.zeros_like(leftHandFreqSmoothed), np.zeros_like(rightHandAmp)))
 
         # frame = cv2.flip(frame, 1)# Makes the frame horizintal, used to properly detect left and right hands.
         cv2.imshow("Pi Theremin", frame) # Display the frame, with given title "Pi Theremin."
@@ -107,3 +128,6 @@ while True: # Loop used to run infinitely.
         if cv2.waitKey(1) == ord('q'): # Quit program and end while loop when q is pressed.
             break
 
+    sound_queue.put(None)
+    sound_thread.join()
+    cv2.destroyAllWindows()
