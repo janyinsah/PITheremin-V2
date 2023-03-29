@@ -145,7 +145,7 @@ while True: # Loop used to run infinitely.
             else:
                 rightHandAmp = np.zeros_like(leftHandFreqSmoothed) # No sound will be played.
 
-            # Generate a waveform using numpy, then send it to defined pygame channel above, this is so that the sound is constant throughout hand movement,
+            # Queue the data structure with the frequency and amplitude data based on the hard co-ordinates to be played on the sound playback thread.
             sound_queue.put((leftHandFreqSmoothed, rightHandAmp))            
         else:
             sound_queue.put((np.zeros_like(leftHandFreqSmoothed), np.zeros_like(rightHandAmp))) # If there is no hands drawn on the frame, is() set the hand co-orindate values to 0 and pass it into the queue data structure.
