@@ -38,7 +38,7 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 
-lock_mixer = threading.Lock()
+lock_mixer = threading.Lock() # Only the gensinewave function can access the play sound thread, computing only once at a time. (Performance Optimization)
 
 # Define and generate a sine wave through a function, using numpy.
 def genSineWave(Freq, Amp):
@@ -93,8 +93,8 @@ hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8, min_tracki
 while True: # Loop used to run infinitely. 
     while camera.isOpened(): # While the camera is on:
         ret, frame = camera.read() # Captures a single frame
-
-        if not ret:
+        frame = cv2.flip(frame, 1) # Frame is flipped horizontally so that it detects left and right hands appropriately.
+        if not ret: # Condition checks whether frame is detected.
             break
         time.sleep(delay)
     # Like the old Thermein version, we draw hand landmarks onto the image by converting BGR to RGB and defining the number of hands for mediapipe to detect.
@@ -146,7 +146,7 @@ while True: # Loop used to run infinitely.
             if rightHandCoord is not None:
                 rightHandAmp = np.interp(rightHandCoord, [minCoord[1], maxCoord[1]], [0, 1])[:, np.newaxis] # np.newaxis adds an empty dimension so that numpy can interpolate rightHandAmps values to map it to the required range for amplitude of the wave
             else:
-                rightHandAmp = np.zeros_like(leftHandFreqSmoothed)
+                rightHandAmp = np.zeros_like(rightHandAmp)
 
             # We flatten the left hand frequency to a 1D array so that it can be sequenced and convolved
             # Hann window used for signal processing and the same means that the input (leftHandFreq) signal will still match the output signal. This is passed as a parameter to genSineWave instead of the original left hand frequency.
@@ -157,7 +157,7 @@ while True: # Loop used to run infinitely.
             sound_queue.put((leftHandFreqSmoothed, rightHandAmp))            
         else:
             sound_queue.put((np.zeros_like(leftHandFreqSmoothed), np.zeros_like(rightHandAmp)))
-
+        
         cv2.imshow("Pi Theremin", frame) # Display the frame, with given title "Pi Theremin."
         cv2.moveWindow("Pi Theremin", 0, 0) # Maps the frame to the top left of the window. 
         if cv2.waitKey(1) == ord('q'): # Quit program and end while loop when q is pressed.
