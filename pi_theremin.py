@@ -1,4 +1,4 @@
-# END OF YEAR PROJECT: THE PI THEREMIN (DESKTOP VERSION)
+# END OF YEAR PROJECT: THE PI THEREMIN (DESKTOP VERSION) (Original version before Pi Downscale)
 # CREATED BY JOSIAH ANYINSAH-BONDZIE
 # STUDENT ID: 8624637
 # ---------------------------------------------------------------------------------
