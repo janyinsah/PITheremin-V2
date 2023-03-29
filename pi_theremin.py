@@ -7,9 +7,9 @@ import mediapipe as mp # Module used to display and receive hand landmark data.
 import cv2 # Used for capture video data for the Theremin.
 import numpy as np # Maths module used to calculate waveform
 import pygame # Game module, but used to continously produce sine wave on it's mixer channels.
-import threading
-import queue
-import time
+import threading # Allow the program to make use of threading
+import queue # First in First Out Data structure to import frequency and amplitude values into the sound playbacl thread
+import time # Used to add intervals between blocks of code. 
 # ---------------------------------------------------------------------------------
 #                                       BODY OF CODE
 # Create the pygame mixer.
@@ -38,36 +38,40 @@ def genSineWave(Freq, Amp):
     Freq = np.reshape(Freq, (-1, 1))
     SAMPLES = np.zeros((44100, 2), dtype=np.int16) # Initialize samples using a numpy array passing two channels as a tuple.
     SINE = np.sin(2 * np.pi * np.arange(44100) * Freq[0] / 44100)
-    resizeAmp = np.resize(Amp, (44100,)) # Reshapes the Amp to fit within the sample set for the mixer to inteprate the array and play the generetated sound wave at the correct
-    SCALED_WAVE = (SINE * 32767 * resizeAmp).astype(np.int16)
-    with lock_mixer:
+    resizeAmp = np.resize(Amp, (44100,)) # Reshapes the Amplitude to fit within the sample set for the mixer to inteprate the array and play the generetated sound wave at the correct
+    SCALED_WAVE = (SINE * 32767 * resizeAmp).astype(np.int16) # This scales the wave according to the size of the amplitude (moving amplitude changes of hand landmarks) and converts it to the dataype needed to process it as audio. Note that it is all the same datatype as the pygame mixer.
+    with lock_mixer: # checks to make sure that the following code is only executed at one thread a time. (
         SAMPLES[:, 0] = SCALED_WAVE  # Index the samples array by 2 so that it matches the format of the steromixer.
-        SAMPLES[:, 1] = SCALED_WAVE  # It duplicates the number of samples aqcross the stereo channel 
+        SAMPLES[:, 1] = SCALED_WAVE  # It duplicates the number of samples aqcross the stereo channel.
         SOUND = pygame.sndarray.make_sound(capGain(SAMPLES)) # Convert then generate the sine wave based of it's calculation of the position of the left/right hand co-ordinates.
         MAIN_CHANNEL.play(SOUND, loops = -1) # Plays the through the pygame channel.
 
 def capGain(samples): # Function to appy to samples tor reduce clipping sound.
-    maxAmp = np.iinfo(samples.dtype).max
-    gain = min(1, (maxAmp / 2) / np.max(np.abs(samples))) 
-    return (samples * gain).astype(samples.dtype)
+    maxAmp = np.iinfo(samples.dtype).max # Get the total amount of samples. 
+    gain = min(1, (maxAmp / 2) / np.max(np.abs(samples)))  # Makes sure that the gain is never more than 1 using the min() function
+    return (samples * gain).astype(samples.dtype) # Returns the result of the gain factor multipled by the samples in form of the original samples datatype.
 
+# This is a thread safe function that determins audio playback through the pygame mixer
 def play_sound(sound_queue):
     while True:
-        sound_data = sound_queue.get()
-        if sound_data is None:
-            break
-        Freq, Amp = sound_data
-        Amp = Amp.flatten()[:Freq.shape[0]]
-        genSineWave(Freq, Amp)
-        time.sleep(0.01)
+        sound_data = sound_queue.get() # Data from the sound queue is processed (the left hand and right hand values for frequency and amplitude)
+        if sound_data is None: # If there is no data to be processed in the queue (the left and right hand features), no sound will be played.
+            break 
+        Freq, Amp = sound_data # Mapping the values received from the left hand and right hand co-ordinates to local variables within the thread-safe sound function.
+        Amp = Amp.flatten()[:Freq.shape[0]] # Converts the 2 dimensional array which amplitude is stored to match the array length of frequency.
+        genSineWave(Freq, Amp) # New frequency and values passed to generate a waveform based on the given values from the queue data structure.
+        time.sleep(0.01) # Added a 1/10000 time break for processing reasons. (It just works better when it's there, but if it's too long the difference is to noticable)
 
 camera = cv2.VideoCapture(0) #Created a videocapture object, that captures video from the default camera of the device.
-camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+camera.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Sets the buffer size of the camera (video frame)  to 1. This is so the frame captures the most recent frame. (Real time fixes)
 
-sound_queue = queue.Queue()
-sound_thread = threading.Thread(target=play_sound, args=(sound_queue,))
-sound_thread.start()
+# Using Queue Data structures to ensure to seperate sound generation from the main thread (main thread deals with processing frames and hand landmark data)
+sound_queue = queue.Queue() # Initialization
+sound_thread = threading.Thread(target=play_sound, args=(sound_queue,)) # This data structure follows a first-in-first-out rule, which is necessary for processing sound in accordance to the most recent hand co-ordination.
+sound_thread.start() # Start the data structure.
 
+# These variables were taken from the mainthread and assigned outside of the loop as zero values. 
+# This is to avoid crashes when there is 1 or no hands detected on the frame.
 leftHandFreqSmoothed = np.zeros(1)
 rightHandAmp = np.zeros(1)
 
@@ -77,7 +81,7 @@ hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8, min_tracki
 while True: # Loop used to run infinitely. 
     while camera.isOpened(): # While the camera is on:
         ret, frame = camera.read() # Captures a single frame
-        if not ret:
+        if not ret: # Break if you cant detect the webcam. 
             break
         frame = cv2.flip(frame, 1) # Flip the frame horizontally so that the the left and right hand positions are detected and mapped corrected.
     # Like the old Thermein version, we draw hand landmarks onto the image by converting BGR to RGB and defining the number of hands for mediapipe to detect.
@@ -93,11 +97,16 @@ while True: # Loop used to run infinitely.
         if hand_result.multi_hand_landmarks: # If hand landmarks are detected on the image:
             hand_landmark = hand_result.multi_hand_landmarks
 
-            hand_centers = [np.mean(np.array([[landmark.x, landmark.y] for landmark in hand.landmark]), axis=0) for hand in hand_landmark]
-            sorted_hand_landmarks = [hand for _, hand in sorted(zip(hand_centers, hand_landmark), key=lambda pair: pair[0][0])]
+            # Looks complicated, but actually isnt (List comprehension to make it a single line of code). We loop through EACH landmark on both hands and produce an average to return a 2 dimensional array of hand landmarks 
+            hand_centers = [np.mean(np.array([[landmark.x, landmark.y] for landmark in hand.landmark]), axis=0) for hand in hand_landmark]  # It gets stored vertically across the array into two seperate parts. (axis=0)
 
-            leftHand = sorted_hand_landmarks[0]
-            rightHand = sorted_hand_landmarks[1] if len(sorted_hand_landmarks) == 2 else None
+            # Also looks devious but isn't. Again using list comprehension we merg the hand landmarks with the newly generated hand centered co-ordinates into one list of array.
+            # The center hand landmarks are joined together in one list with it's corresponding hand landmark.
+            sorted_hand_landmarks = [hand for _, hand in sorted(zip(hand_centers, hand_landmark), key=lambda pair: pair[0][0])] # Lambda is a one line function that pairs center hands and it's associated hand landmark and sorts them corresponding to the key[0][0] which returns the x co-ordinates (vertical axis 0 at index 0 [0][0]) from the most left x < 1 to the most right x > 1
+            # We iterate through this sorted hand only taking the hand landmark and leaving the hand center landmarks
+
+            leftHand = sorted_hand_landmarks[0] # Assign the left hand landmarks to the first set of hand landmarks identified form the key pair lambda functiom
+            rightHand = sorted_hand_landmarks[1] if len(sorted_hand_landmarks) == 2 else None # Assigns the right hand the second index of hand landmarks only if the index length of the hand landmarks equates to 2. (Remember max_num_hands=2)
 
             for landmark_item in hand_result.multi_hand_landmarks: # Loop through each landmark in then landmark list: multi_hand_landmarks.
                 mp_drawing.draw_landmarks(frame, landmark_item, connections=mp_hands.HAND_CONNECTIONS) # Draw the landmarks onto the image/frame. (Optional, only used to see how mediapipe works in response to the Theremin Program.)
@@ -105,46 +114,47 @@ while True: # Loop used to run infinitely.
             # This section of code gets the x and y axis for each landmark within the frame.
             leftHandCoord = np.array([[landmark.x, landmark.y] for landmark in leftHand.landmark])
 
-            if rightHand is not None: 
-                rightHandCoord = np.array([[landmark.x, landmark.y] for landmark in rightHand.landmark])
+            if rightHand is not None: # We check if the right hand is detected on the frame
+                rightHandCoord = np.array([[landmark.x, landmark.y] for landmark in rightHand.landmark])  # Convert the right hand positions to a two dimensional numpy array
             else: 
-                rightHandCoord = None
+                rightHandCoord = None # It doesn't exist if there is no right hand.
 
-            if rightHandCoord is not None:
+            if rightHandCoord is not None: # Again checking to see if the right hand is detected on the frame
                 # minCoord and maxCoord is the result of calcualting the minimum and amximum co-ordinates of the left hand and right hand.
                 # np.vstack is used to stack the co-ordinates into a 2d array in sequence vertically so it can be interpolated (next block of code).
                 minCoord = np.min(np.vstack([leftHandCoord, rightHandCoord]), axis=0)
                 maxCoord = np.max(np.vstack([leftHandCoord, rightHandCoord]), axis=0)
             else: 
-                minCoord = np.min(leftHandCoord, axis=0)
+                minCoord = np.min(leftHandCoord, axis=0) # Only detect and display landmarks of which represent the minimum and maximum values of the left hand
                 maxCoord = np.max(leftHandCoord, axis=0)
+                # In this case this would be NILL, and values that are sent would be zeros, this means no sound will be played.
 
             # Map distance of hands within frame, to freq and amp ranges for the Pi Theremin. 
             # Numpy interpolation so that even if the hand coordinations fall out of range (although not expected to due to vstack and the assignment of the coordinate arrays), that it is extrapolated back into the ranges each endpoint. e.g 100,1000.
 
             leftHandFreq = np.interp(leftHandCoord, [minCoord[0], maxCoord[0]], [100, 1000]) # Mapping the left hand co-ordinates within the range of set amp min, and amp max 0 and 1.
+            # The [0] represents the x axis, which is what determines frequency for the left hand.
+            # We flatten the left hand frequency to a 1D array so that it can be sequenced and convolved
+            # Hann window used for signal processing and the same means that the input (leftHandFreq) signal will still match the output signal. This is passed as a parameter to genSineWave instead of the original left hand frequency.
+
             leftHandFreqSmoothed = np.convolve(leftHandFreq.flatten(), window, mode='same') 
 
             if rightHandCoord is not None:
                 rightHandAmp = np.interp(rightHandCoord, [minCoord[1], maxCoord[1]], [0, 1])[:, np.newaxis] # np.newaxis adds an empty dimension so that numpy can interpolate rightHandAmps values to map it to the required range for amplitude of the wave
+                # [1] a represents the Y axis, which is what will determine the amplitude for the right hand
             else:
-                rightHandAmp = np.zeros_like(leftHandFreqSmoothed)
-
-            # We flatten the left hand frequency to a 1D array so that it can be sequenced and convolved
-            # Hann window used for signal processing and the same means that the input (leftHandFreq) signal will still match the output signal. This is passed as a parameter to genSineWave instead of the original left hand frequency.
-            # The same is done to righthandFreq for testing.
-
+                rightHandAmp = np.zeros_like(leftHandFreqSmoothed) # No sound will be played.
 
             # Generate a waveform using numpy, then send it to defined pygame channel above, this is so that the sound is constant throughout hand movement,
             sound_queue.put((leftHandFreqSmoothed, rightHandAmp))            
         else:
-            sound_queue.put((np.zeros_like(leftHandFreqSmoothed), np.zeros_like(rightHandAmp)))
+            sound_queue.put((np.zeros_like(leftHandFreqSmoothed), np.zeros_like(rightHandAmp))) # If there is no hands drawn on the frame, is() set the hand co-orindate values to 0 and pass it into the queue data structure.
 
         cv2.imshow("Pi Theremin", frame) # Display the frame, with given title "Pi Theremin."
-        cv2.moveWindow("Pi Theremin", 0, 0) # Maps the frame to the top left of the window. 
+        cv2.moveWindow("Pi Theremin", 0, 0) # Maps the frame to the top left of the screen. 
         if cv2.waitKey(1) == ord('q'): # Quit program and end while loop when q is pressed.
             break
 
-    sound_queue.put(None)
-    sound_thread.join()
-    cv2.destroyAllWindows()
+    sound_queue.put(None) # Terminate the sound playback thread.
+    sound_thread.join() # Wait for the sound thread to process the current amp and frequency values before playing back the next values.
+    cv2.destroyAllWindows() # Terminate frame.
