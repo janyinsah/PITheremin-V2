@@ -61,7 +61,7 @@ def play_sound(sound_queue):
         genSineWave(Freq, Amp)
         time.sleep(0.01)
 
-camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
+camera = cv2.VideoCapture(0) #Created a videocapture object, that captures video from the default camera of the device.
 camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 sound_queue = queue.Queue()
@@ -77,7 +77,9 @@ hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8, min_tracki
 while True: # Loop used to run infinitely. 
     while camera.isOpened(): # While the camera is on:
         ret, frame = camera.read() # Captures a single frame
-
+        if not ret:
+            break
+        frame = cv2.flip(frame, 1) # Flip the frame horizontally so that the the left and right hand positions are detected and mapped corrected.
     # Like the old Thermein version, we draw hand landmarks onto the image by converting BGR to RGB and defining the number of hands for mediapipe to detect.
         frame.flags.writeable = False
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Colour is converted to RGB to be read by mediapipe as it uses RGB system for colours.
