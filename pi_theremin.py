@@ -102,7 +102,7 @@ while True: # Loop used to run infinitely.
 
             # Also looks devious but isn't. Again using list comprehension we merg the hand landmarks with the newly generated hand centered co-ordinates into one list of array.
             # The center hand landmarks are joined together in one list with it's corresponding hand landmark.
-            sorted_hand_landmarks = [hand for _, hand in sorted(zip(hand_centers, hand_landmark), key=lambda pair: pair[0][0])] # Lambda is a one line function that pairs center hands and it's associated hand landmark and sorts them corresponding to the key[0][0] which returns the x co-ordinates (vertical axis 0 at index 0 [0][0]) from the most left x < 1 to the most right x > 1
+            sorted_hand_landmarks = [hand for _, hand in sorted(zip(hand_centers, hand_landmark), key=lambda pair: pair[0][0])] # Lambda is a one line function that pairs center hands and it's associated hand landmark and sorts them corresponding to the key[0][0] which returns the x co-ordinates (vertical axis 0 at index 0 [0] which is the center hand landmark) from the most left x < 1 to the most right x > 1
             # We iterate through this sorted hand only taking the hand landmark and leaving the hand center landmarks
 
             leftHand = sorted_hand_landmarks[0] # Assign the left hand landmarks to the first set of hand landmarks identified form the key pair lambda functiom
