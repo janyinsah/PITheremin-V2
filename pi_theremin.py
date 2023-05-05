@@ -66,7 +66,7 @@ def play_sound(sound_queue):
         genSineWave(Freq, Amp) # New frequency and values passed to generate a waveform based on the given values from the queue data structure.
         time.sleep(0.01) # Added a 1/10000 time break for processing reasons. (It just works better when it's there, but if it's too long the difference is to noticable)
 
-camera = cv2.VideoCapture(1) #Created a videocapture object, that captures video from the default camera of the device.
+camera = cv2.VideoCapture(0) #Created a videocapture object, that captures video from the default camera of the device.
 camera.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Sets the buffer size of the camera (video frame)  to 1. This is so the frame captures the most recent frame. (Real time fixes)
 # Camera properties defined to reduce the resolution of the frame.
 camera.set(cv2.CAP_PROP_FRAME_WIDTH, 320) # Define width
